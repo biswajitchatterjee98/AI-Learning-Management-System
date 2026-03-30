@@ -15,6 +15,7 @@ from app.models import (
     AssessmentQuestion,
     SimulationScenario,
     SimulationAttempt,
+    KnowledgeItem,
 )
 from app.services.ai_service import call_llm, build_lesson_content
 
@@ -54,35 +55,53 @@ def generate_lms_job(job_id: str, tenant_id: str, blueprint_id: str) -> dict:
             teams = data.get("teams") or ["General"]
             focus = data.get("training_focus") or ["sop_compliance"]
             kpis = data.get("kpis") or ["conversion_rate", "resolution_time"]
+            knowledge_items = db.scalars(select(KnowledgeItem).where(KnowledgeItem.tenant_id == UUID(tenant_id))).all()
+            grouped_by_tab: dict[str, list[KnowledgeItem]] = {}
+            for item in knowledge_items:
+                grouped_by_tab.setdefault(item.source_tab, []).append(item)
 
             course = Course(
                 tenant_id=UUID(tenant_id),
-                title=f"Adaptive Training: {', '.join(teams[:2])}",
-                description="Generated asynchronously from blueprint.",
+                title=f"Adaptive Training: {', '.join(teams[:2])} ({len(knowledge_items)} KB items)",
+                description="Generated asynchronously from blueprint and tenant knowledge base.",
             )
             db.add(course)
             db.flush()
 
             created_lessons = 0
-            for idx, team in enumerate(teams[:3]):
-                module = Module(tenant_id=UUID(tenant_id), course_id=course.id, title=f"{team} Track", order_index=idx)
+            tabs = list(grouped_by_tab.keys())[:6] if grouped_by_tab else teams[:3]
+            for idx, tab in enumerate(tabs):
+                module = Module(tenant_id=UUID(tenant_id), course_id=course.id, title=f"{tab} Playbook", order_index=idx)
                 db.add(module)
                 db.flush()
                 topic = focus[idx % len(focus)]
+                context_examples = grouped_by_tab.get(tab, [])[:3]
+                source_lines = []
+                for ex in context_examples:
+                    source_lines.append(f"- {ex.title}: {ex.description[:200]}")
+                source_block = "\n".join(source_lines) if source_lines else "- No examples available."
                 try:
                     lesson_text = call_llm(
                         "You are a corporate L&D assistant.",
-                        f"Create a concise lesson for team={team}, topic={topic}, kpis={','.join(kpis[:3])}.",
+                        (
+                            f"Create a concise lesson for module={tab}, topic={topic}, kpis={','.join(kpis[:3])}.\n"
+                            f"Use these source examples:\n{source_block}"
+                        ),
                     )
                 except Exception:
-                    lesson_text = build_lesson_content(team, topic, kpis)
+                    lesson_text = build_lesson_content(tab, topic, kpis)
                 db.add(
                     Lesson(
                         tenant_id=UUID(tenant_id),
                         module_id=module.id,
                         title=f"{module.title}: Foundations",
                         content_text=lesson_text,
-                        source_refs_json={"blueprint_id": str(blueprint.id), "team": team, "focus_topic": topic},
+                        source_refs_json={
+                            "blueprint_id": str(blueprint.id),
+                            "module": tab,
+                            "focus_topic": topic,
+                            "knowledge_item_ids": [str(ex.id) for ex in context_examples],
+                        },
                     )
                 )
                 created_lessons += 1
@@ -110,14 +129,14 @@ def generate_lms_job(job_id: str, tenant_id: str, blueprint_id: str) -> dict:
 
 
 @celery_app.task(name="jobs.tutor_feedback")
-def tutor_feedback_job(job_id: str, lesson_title: str, lesson_content: str, learner_answer: str) -> dict:
+def tutor_feedback_job(job_id: str, lesson_title: str, lesson_content: str, learner_answer: str, source_refs_json: str = "{}") -> dict:
     job_uuid = UUID(job_id)
     _set_job_status(job_uuid, "running")
     try:
         prompt = (
             "Review the learner answer against lesson context and return strict JSON with keys: "
             "feedback (string), follow_up_question (string), confidence_score (0-100 int).\n"
-            f"Lesson title: {lesson_title}\nLesson content:\n{lesson_content[:3000]}\n\nLearner answer:\n{learner_answer[:2000]}"
+            f"Lesson title: {lesson_title}\nLesson content:\n{lesson_content[:3000]}\nSource refs:{source_refs_json}\n\nLearner answer:\n{learner_answer[:2000]}"
         )
         try:
             raw = call_llm("You are an adaptive AI tutor.", prompt)
@@ -126,12 +145,14 @@ def tutor_feedback_job(job_id: str, lesson_title: str, lesson_content: str, lear
                 "feedback": str(parsed.get("feedback") or "Good attempt. Keep practicing with more specific examples."),
                 "follow_up_question": str(parsed.get("follow_up_question") or "How would you apply this in a real customer scenario?"),
                 "confidence_score": max(0, min(100, int(parsed.get("confidence_score", 70)))),
+                "source_refs": source_refs_json,
             }
         except Exception:
             result = {
                 "feedback": "Good attempt. You captured important points, but include clearer role-specific actions next time.",
                 "follow_up_question": "What would be your first two actions in a real scenario using this lesson?",
                 "confidence_score": 70,
+                "source_refs": source_refs_json,
             }
         _set_job_status(job_uuid, "succeeded", result_json=result)
         return result

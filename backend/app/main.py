@@ -1,5 +1,7 @@
 from datetime import datetime
+import csv
 import json
+from collections import Counter
 from typing import Any, Dict, List
 from urllib import request as urlrequest
 from urllib.error import HTTPError, URLError
@@ -33,6 +35,8 @@ from app.models import (
     AsyncJob,
     SimulationScenario,
     SimulationAttempt,
+    KnowledgeItem,
+    TenantProfile,
 )
 from app.schemas import (
     AssessmentOut,
@@ -70,6 +74,12 @@ from app.schemas import (
     SimulationScenarioOut,
     SimulationSubmitRequest,
     SimulationAttemptOut,
+    TenantDataSyncRequest,
+    TenantDataSyncOut,
+    KnowledgeItemOut,
+    KnowledgeStatsOut,
+    TenantProfileUpsertRequest,
+    TenantProfileOut,
 )
 from app.tasks.jobs import generate_lms_job, tutor_feedback_job, simulation_evaluate_job
 
@@ -93,6 +103,75 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     safe_init()
+
+
+DEFAULT_NAMADARSHAN_TABS: List[Dict[str, str]] = [
+    {"name": "Temples", "gid": "99463276", "url": "https://docs.google.com/spreadsheets/d/1lnfU0PJhK749X3HKLgECls6-7z7AzLCFf7xsOrwVaC8/edit?gid=99463276#gid=99463276"},
+    {"name": "Darshan", "gid": "426249344", "url": "https://docs.google.com/spreadsheets/d/1lnfU0PJhK749X3HKLgECls6-7z7AzLCFf7xsOrwVaC8/edit?gid=426249344#gid=426249344"},
+    {"name": "Puja", "gid": "599025530", "url": "https://docs.google.com/spreadsheets/d/1lnfU0PJhK749X3HKLgECls6-7z7AzLCFf7xsOrwVaC8/edit?gid=599025530#gid=599025530"},
+    {"name": "Yatra", "gid": "1038947046", "url": "https://docs.google.com/spreadsheets/d/1lnfU0PJhK749X3HKLgECls6-7z7AzLCFf7xsOrwVaC8/edit?gid=1038947046#gid=1038947046"},
+    {"name": "Prasadam", "gid": "986093364", "url": "https://docs.google.com/spreadsheets/d/1lnfU0PJhK749X3HKLgECls6-7z7AzLCFf7xsOrwVaC8/edit?gid=986093364#gid=986093364"},
+    {"name": "Chadhava", "gid": "218786251", "url": "https://docs.google.com/spreadsheets/d/1lnfU0PJhK749X3HKLgECls6-7z7AzLCFf7xsOrwVaC8/edit?gid=218786251#gid=218786251"},
+    {"name": "Astro Naman (Kundli)", "gid": "644363953", "url": "https://docs.google.com/spreadsheets/d/1lnfU0PJhK749X3HKLgECls6-7z7AzLCFf7xsOrwVaC8/edit?gid=644363953#gid=644363953"},
+    {"name": "AI Kundli", "gid": "174839660", "url": "https://docs.google.com/spreadsheets/d/1lnfU0PJhK749X3HKLgECls6-7z7AzLCFf7xsOrwVaC8/edit?gid=174839660#gid=174839660"},
+    {"name": "Vedic Consultants", "gid": "1539574068", "url": "https://docs.google.com/spreadsheets/d/1lnfU0PJhK749X3HKLgECls6-7z7AzLCFf7xsOrwVaC8/edit?gid=1539574068#gid=1539574068"},
+    {"name": "Live Darshan", "gid": "838748373", "url": "https://docs.google.com/spreadsheets/d/1lnfU0PJhK749X3HKLgECls6-7z7AzLCFf7xsOrwVaC8/edit?gid=838748373#gid=838748373"},
+]
+
+
+def _fetch_google_sheet_csv(spreadsheet_url: str, gid: str) -> List[Dict[str, str]]:
+    # Supports normal sheet edit URL by converting to export CSV.
+    base = spreadsheet_url.split("/edit")[0]
+    csv_url = f"{base}/export?format=csv&gid={gid}"
+    req = urlrequest.Request(csv_url, method="GET")
+    with urlrequest.urlopen(req, timeout=20) as resp:
+        raw = resp.read().decode("utf-8", errors="ignore")
+    rows: List[Dict[str, str]] = []
+    reader = csv.DictReader(raw.splitlines())
+    for row in reader:
+        normalized: Dict[str, str] = {}
+        for k, v in row.items():
+            key = (k or "").strip()
+            if not key:
+                continue
+            normalized[key] = (v or "").strip()
+        if any(normalized.values()):
+            rows.append(normalized)
+    return rows
+
+
+def _team_hint_from_tab(tab_name: str) -> str:
+    t = tab_name.lower()
+    if t in ("temples", "darshan", "puja", "yatra", "prasadam", "chadhava", "live darshan"):
+        return "operations"
+    if "astro" in t or "kundli" in t or "vedic consultants" in t:
+        return "customer_support"
+    return "sales"
+
+
+def _normalize_sheet_row(tab_name: str, row: Dict[str, str], source_row: int, source_url: str, gid: str) -> Dict[str, Any]:
+    title = row.get("Title") or row.get("Name") or row.get("Temple Name") or row.get("Package Name") or row.get("Service Type") or row.get("Feature") or row.get("ID") or f"{tab_name} Row {source_row}"
+    category = row.get("Category") or row.get("Type") or tab_name
+    service_type = row.get("Service Type") or row.get("Topic") or row.get("Type") or tab_name
+    description = row.get("Description") or row.get("About") or row.get("Services Offered") or row.get("Key Aartis") or ""
+    tags = [tab_name, category, service_type, row.get("Location", ""), row.get("Temple", ""), row.get("Deity", "")]
+    tags = [t.strip() for t in tags if t and t.strip()]
+    canonical_seed = row.get("Slug") or row.get("Page URL") or row.get("ID") or title
+    canonical_key = f"{tab_name.lower().replace(' ', '_')}::{str(canonical_seed).lower().strip()}"
+    return {
+        "source_tab": tab_name,
+        "source_gid": gid,
+        "source_row": source_row,
+        "source_url": source_url,
+        "canonical_key": canonical_key[:255],
+        "title": str(title)[:500],
+        "category": str(category)[:255],
+        "service_type": str(service_type)[:255],
+        "team_hint": _team_hint_from_tab(tab_name),
+        "description": str(description),
+        "tags_json": {"tags": tags},
+        "attrs_json": row,
+    }
 
 
 def _generate_blueprint_stub(req: BlueprintCreateRequest) -> Dict[str, Any]:
@@ -377,6 +456,55 @@ def _create_async_job(
     return job
 
 
+def _ensure_tenant_profile(tenant_id: UUID, db: Session) -> TenantProfile:
+    profile = db.scalar(select(TenantProfile).where(TenantProfile.tenant_id == tenant_id))
+    if profile:
+        return profile
+    profile = TenantProfile(
+        tenant_id=tenant_id,
+        business_domain="pilgrimage_services",
+        role_template_json={
+            "admin": ["tenant_admin", "analytics", "configuration"],
+            "manager": ["training_manager", "operations_coach"],
+            "employee": ["learner", "support_exec"],
+        },
+        taxonomy_mapping_json={"tabs_to_domains": {"Temples": "catalog", "Darshan": "service", "Puja": "rituals"}},
+        generation_prefs_json={"tone": "clear_practical", "audience": "employee"},
+        connectors_json={"primary": "google_sheets"},
+        labels_json={"tenant_display_name": "Namadarshan"},
+    )
+    db.add(profile)
+    db.flush()
+    return profile
+
+
+def _build_blueprint_from_knowledge(tenant_id: UUID, db: Session) -> Dict[str, Any]:
+    rows = db.scalars(select(KnowledgeItem).where(KnowledgeItem.tenant_id == tenant_id)).all()
+    if not rows:
+        return {
+            "teams": ["Sales", "Support", "Operations"],
+            "kpis": ["conversion_rate", "resolution_time", "first_response_time"],
+            "training_focus": ["service_knowledge", "SOP_compliance", "customer_clarity"],
+            "simulation_required": True,
+            "source": {"generator": "knowledge_empty_fallback"},
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+        }
+    team_counts = Counter([r.team_hint for r in rows if r.team_hint])
+    domain_counts = Counter([r.source_tab for r in rows])
+    top_domains = [d for d, _ in domain_counts.most_common(6)]
+    top_teams = [t for t, _ in team_counts.most_common(3)] or ["operations", "customer_support", "sales"]
+    team_map = {"operations": "Operations", "customer_support": "Support", "sales": "Sales"}
+    teams = [team_map.get(t, t.title()) for t in top_teams]
+    return {
+        "teams": teams,
+        "kpis": ["conversion_rate", "resolution_time", "customer_satisfaction"],
+        "training_focus": [f"{d.lower().replace(' ', '_')}_handling" for d in top_domains[:5]],
+        "simulation_required": True,
+        "source": {"generator": "knowledge_items", "items_count": len(rows), "tabs": top_domains},
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
 @app.post("/api/login", response_model=LoginResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     # Note: we keep auth logic in a single file for Phase 1 scaffolding speed.
@@ -415,6 +543,131 @@ def me(current: User = Depends(get_current_user)):
 @app.post("/api/auth/google")
 def google_auth_stub():
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Google OAuth not implemented in Phase 1 scaffolding")
+
+
+@app.get("/api/tenant/profile", response_model=TenantProfileOut)
+def get_tenant_profile(
+    current: User = Depends(require_roles("admin", "manager")),
+    db: Session = Depends(get_db),
+):
+    profile = _ensure_tenant_profile(current.tenant_id, db)
+    db.commit()
+    return profile
+
+
+@app.put("/api/tenant/profile", response_model=TenantProfileOut)
+def upsert_tenant_profile(
+    payload: TenantProfileUpsertRequest,
+    current: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+):
+    profile = _ensure_tenant_profile(current.tenant_id, db)
+    profile.business_domain = payload.business_domain
+    profile.role_template_json = payload.role_template_json
+    profile.taxonomy_mapping_json = payload.taxonomy_mapping_json
+    profile.generation_prefs_json = payload.generation_prefs_json
+    profile.connectors_json = payload.connectors_json
+    profile.labels_json = payload.labels_json
+    profile.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+@app.post("/api/tenant-data/sync", response_model=TenantDataSyncOut)
+def sync_tenant_data(
+    payload: TenantDataSyncRequest,
+    current: User = Depends(require_roles("admin", "manager")),
+    db: Session = Depends(get_db),
+):
+    tabs = payload.tabs or [
+        {"name": item["name"], "url": item["url"], "gid": item["gid"]} for item in DEFAULT_NAMADARSHAN_TABS
+    ]
+    synced_tabs = 0
+    upserted = 0
+    for tab in tabs:
+        tab_name = str(tab["name"]).strip()
+        tab_url = str(tab["url"]).strip()
+        tab_gid = str(tab["gid"]).strip()
+        rows = _fetch_google_sheet_csv(tab_url, tab_gid)
+        synced_tabs += 1
+        for idx, row in enumerate(rows, start=2):
+            normalized = _normalize_sheet_row(tab_name, row, idx, tab_url, tab_gid)
+            existing = db.scalar(
+                select(KnowledgeItem).where(
+                    KnowledgeItem.tenant_id == current.tenant_id,
+                    KnowledgeItem.source_tab == normalized["source_tab"],
+                    KnowledgeItem.canonical_key == normalized["canonical_key"],
+                )
+            )
+            if not existing:
+                existing = KnowledgeItem(
+                    tenant_id=current.tenant_id,
+                    source_kind="google_sheet",
+                    source_tab=normalized["source_tab"],
+                    source_gid=normalized["source_gid"],
+                    source_row=normalized["source_row"],
+                    source_url=normalized["source_url"],
+                    canonical_key=normalized["canonical_key"],
+                )
+                db.add(existing)
+            existing.title = normalized["title"]
+            existing.category = normalized["category"]
+            existing.service_type = normalized["service_type"]
+            existing.team_hint = normalized["team_hint"]
+            existing.description = normalized["description"]
+            existing.tags_json = normalized["tags_json"]
+            existing.attrs_json = normalized["attrs_json"]
+            existing.updated_at = datetime.utcnow()
+            upserted += 1
+    db.commit()
+    return TenantDataSyncOut(ok=True, synced_tabs=synced_tabs, upserted_items=upserted)
+
+
+@app.get("/api/knowledge-items", response_model=List[KnowledgeItemOut])
+def list_knowledge_items(
+    tab: str = "",
+    limit: int = 100,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    stmt = select(KnowledgeItem).where(KnowledgeItem.tenant_id == current.tenant_id)
+    if tab.strip():
+        stmt = stmt.where(KnowledgeItem.source_tab == tab.strip())
+    stmt = stmt.order_by(KnowledgeItem.updated_at.desc()).limit(max(1, min(limit, 500)))
+    return db.scalars(stmt).all()
+
+
+@app.get("/api/knowledge/stats", response_model=KnowledgeStatsOut)
+def knowledge_stats(
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    rows = db.scalars(select(KnowledgeItem).where(KnowledgeItem.tenant_id == current.tenant_id)).all()
+    by_tab = Counter([r.source_tab for r in rows])
+    by_team = Counter([r.team_hint for r in rows])
+    return KnowledgeStatsOut(
+        total_items=len(rows),
+        by_tab=dict(by_tab),
+        by_team_hint=dict(by_team),
+    )
+
+
+@app.post("/api/onboarding/blueprint/from-knowledge", response_model=BlueprintOut)
+def create_blueprint_from_knowledge(
+    current: User = Depends(require_roles("admin", "manager")),
+    db: Session = Depends(get_db),
+):
+    blueprint = CompanyBlueprint(
+        tenant_id=current.tenant_id,
+        version=1,
+        blueprint_json=_build_blueprint_from_knowledge(current.tenant_id, db),
+        source_refs_json={"type": "knowledge_items"},
+    )
+    db.add(blueprint)
+    db.commit()
+    db.refresh(blueprint)
+    return blueprint
 
 
 @app.post("/api/onboarding/blueprint", response_model=BlueprintOut)
@@ -795,9 +1048,21 @@ def tutor_feedback(
     )
     db.commit()
     try:
-        tutor_feedback_job.delay(str(job.id), lesson.title, lesson.content_text, payload.learner_answer)
+        tutor_feedback_job.delay(
+            str(job.id),
+            lesson.title,
+            lesson.content_text,
+            payload.learner_answer,
+            json.dumps(lesson.source_refs_json or {}, ensure_ascii=True),
+        )
     except Exception:
-        tutor_feedback_job(str(job.id), lesson.title, lesson.content_text, payload.learner_answer)
+        tutor_feedback_job(
+            str(job.id),
+            lesson.title,
+            lesson.content_text,
+            payload.learner_answer,
+            json.dumps(lesson.source_refs_json or {}, ensure_ascii=True),
+        )
     return JobEnqueueOut(job_id=job.id, status="queued", message="Tutor feedback job queued")
 
 
@@ -935,6 +1200,38 @@ def ingest_kpi(
 
     db.commit()
     return KpiIngestOut(ok=True, updated_skills=updated)
+
+
+@app.get("/api/analytics/tenant")
+def tenant_analytics(
+    current: User = Depends(require_roles("admin", "manager")),
+    db: Session = Depends(get_db),
+):
+    users = db.scalars(select(User).where(User.tenant_id == current.tenant_id)).all()
+    attempts = db.scalars(select(SimulationAttempt).where(SimulationAttempt.tenant_id == current.tenant_id)).all()
+    submissions = db.scalars(select(AssessmentSubmission).where(AssessmentSubmission.tenant_id == current.tenant_id)).all()
+    lessons_done = db.scalars(select(LessonProgress).where(LessonProgress.tenant_id == current.tenant_id)).all()
+    cards = db.scalars(select(SkillScorecard).where(SkillScorecard.tenant_id == current.tenant_id)).all()
+    knowledge = db.scalars(select(KnowledgeItem).where(KnowledgeItem.tenant_id == current.tenant_id)).all()
+
+    avg_quiz = round(sum(s.score for s in submissions) / len(submissions), 2) if submissions else 0
+    avg_sim = round(sum(a.score for a in attempts if a.status == "completed") / max(1, len([a for a in attempts if a.status == "completed"])), 2) if attempts else 0
+
+    weak_skills = sorted(cards, key=lambda c: c.score)[:5]
+    weak_skill_payload = [{"skill_name": c.skill_name, "score": c.score, "user_id": str(c.user_id)} for c in weak_skills]
+    by_tab = dict(Counter([k.source_tab for k in knowledge]))
+
+    return {
+        "users_count": len(users),
+        "knowledge_items": len(knowledge),
+        "knowledge_by_tab": by_tab,
+        "lesson_completions": len(lessons_done),
+        "assessments_submitted": len(submissions),
+        "avg_assessment_score": avg_quiz,
+        "simulations_completed": len([a for a in attempts if a.status == "completed"]),
+        "avg_simulation_score": avg_sim,
+        "weak_skills": weak_skill_payload,
+    }
 
 
 @app.get("/api/gamification/me", response_model=GamificationProfileOut)

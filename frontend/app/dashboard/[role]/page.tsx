@@ -15,7 +15,10 @@ import {
   gamificationLeaderboardApi,
   integrationsWebhooksApi,
   createWebhookApi,
+  createBlueprintFromKnowledgeApi,
   lessonsApi,
+  knowledgeItemsApi,
+  knowledgeStatsApi,
   listBlueprintsApi,
   meApi,
   modulesApi,
@@ -24,7 +27,11 @@ import {
   tutorFeedbackApi,
   startSimulationApi,
   submitSimulationApi,
+  tenantAnalyticsApi,
+  syncTenantDataApi,
+  tenantProfileApi,
   simulationAttemptApi,
+  upsertTenantProfileApi,
   type AssessmentOut,
   type AssessmentQuestionOut,
   type BlueprintOut,
@@ -40,6 +47,10 @@ import {
   type WebhookOut,
   type SimulationScenarioOut,
   type SimulationAttemptOut,
+  type KnowledgeStatsOut,
+  type KnowledgeItemOut,
+  type TenantProfileOut,
+  type TenantAnalyticsOut,
 } from "@/lib/api";
 
 function roleLabel(role: string) {
@@ -91,6 +102,12 @@ export default function DashboardPage() {
   const [gamificationProfile, setGamificationProfile] = useState<GamificationProfileOut | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardRowOut[]>([]);
   const [webhooks, setWebhooks] = useState<WebhookOut[]>([]);
+  const [knowledgeStats, setKnowledgeStats] = useState<KnowledgeStatsOut | null>(null);
+  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItemOut[]>([]);
+  const [knowledgeTabFilter, setKnowledgeTabFilter] = useState("");
+  const [tenantProfile, setTenantProfile] = useState<TenantProfileOut | null>(null);
+  const [tenantAnalytics, setTenantAnalytics] = useState<TenantAnalyticsOut | null>(null);
+  const [knowledgeMessage, setKnowledgeMessage] = useState<string | null>(null);
   const [webhookProvider, setWebhookProvider] = useState("slack");
   const [webhookEventName, setWebhookEventName] = useState("progress.updated");
   const [webhookTargetUrl, setWebhookTargetUrl] = useState("");
@@ -167,12 +184,27 @@ export default function DashboardPage() {
     }
 
     if (meRes.role === "admin" || meRes.role === "manager") {
-      const [blueprintRes, webhookRes] = await Promise.all([listBlueprintsApi(token), integrationsWebhooksApi(token)]);
+      const [blueprintRes, webhookRes, statsRes, itemsRes, profileRes, analyticsRes] = await Promise.all([
+        listBlueprintsApi(token),
+        integrationsWebhooksApi(token),
+        knowledgeStatsApi(token),
+        knowledgeItemsApi(token, knowledgeTabFilter, 15),
+        tenantProfileApi(token),
+        tenantAnalyticsApi(token),
+      ]);
       setBlueprints(blueprintRes);
       setWebhooks(webhookRes);
+      setKnowledgeStats(statsRes);
+      setKnowledgeItems(itemsRes);
+      setTenantProfile(profileRes);
+      setTenantAnalytics(analyticsRes);
     } else {
       setBlueprints([]);
       setWebhooks([]);
+      setKnowledgeStats(null);
+      setKnowledgeItems([]);
+      setTenantProfile(null);
+      setTenantAnalytics(null);
     }
   }
 
@@ -191,6 +223,19 @@ export default function DashboardPage() {
     }
     run();
   }, [accessToken]);
+
+  useEffect(() => {
+    async function refreshKnowledgeItems() {
+      if (!accessToken || !canManageOnboarding) return;
+      try {
+        const items = await knowledgeItemsApi(accessToken, knowledgeTabFilter, 15);
+        setKnowledgeItems(items);
+      } catch {
+        // Keep prior items on filter fetch failure.
+      }
+    }
+    void refreshKnowledgeItems();
+  }, [accessToken, canManageOnboarding, knowledgeTabFilter]);
 
   async function pollJobUntilDone(token: string, jobId: string): Promise<JobStatusOut> {
     setIsPollingJob(true);
@@ -242,6 +287,49 @@ export default function DashboardPage() {
       await loadDashboardData(accessToken);
     } catch (err) {
       setOnboardingMessage(err instanceof Error ? err.message : "Failed to generate LMS");
+    }
+  }
+
+  async function handleSyncTenantData() {
+    if (!accessToken) return;
+    setKnowledgeMessage(null);
+    try {
+      const res = await syncTenantDataApi(accessToken, {});
+      setKnowledgeMessage(`Synced ${res.synced_tabs} tabs, upserted ${res.upserted_items} items.`);
+      await loadDashboardData(accessToken);
+    } catch (err) {
+      setKnowledgeMessage(err instanceof Error ? err.message : "Failed to sync tenant data");
+    }
+  }
+
+  async function handleCreateBlueprintFromKnowledge() {
+    if (!accessToken) return;
+    setOnboardingMessage(null);
+    try {
+      const created = await createBlueprintFromKnowledgeApi(accessToken);
+      setOnboardingMessage(`Knowledge blueprint created (${created.id.slice(0, 8)}...).`);
+      await loadDashboardData(accessToken);
+    } catch (err) {
+      setOnboardingMessage(err instanceof Error ? err.message : "Failed to create knowledge blueprint");
+    }
+  }
+
+  async function handleSaveTenantProfile() {
+    if (!accessToken || !tenantProfile || me?.role !== "admin") return;
+    setKnowledgeMessage(null);
+    try {
+      await upsertTenantProfileApi(accessToken, {
+        business_domain: tenantProfile.business_domain,
+        role_template_json: tenantProfile.role_template_json,
+        taxonomy_mapping_json: tenantProfile.taxonomy_mapping_json,
+        generation_prefs_json: tenantProfile.generation_prefs_json,
+        connectors_json: tenantProfile.connectors_json,
+        labels_json: tenantProfile.labels_json,
+      });
+      setKnowledgeMessage("Tenant configuration saved.");
+      await loadDashboardData(accessToken);
+    } catch (err) {
+      setKnowledgeMessage(err instanceof Error ? err.message : "Failed to save tenant configuration");
     }
   }
 
@@ -486,6 +574,14 @@ export default function DashboardPage() {
             </button>
           </form>
           <div style={{ marginTop: 10 }}>
+            <button onClick={() => void handleSyncTenantData()} style={{ marginRight: 8 }}>
+              Sync Namadarshan Sheet Data
+            </button>
+            <button onClick={() => void handleCreateBlueprintFromKnowledge()}>
+              Create Blueprint From Synced Data
+            </button>
+          </div>
+          <div style={{ marginTop: 10 }}>
             <strong>Available Blueprints</strong>
             {blueprints.length === 0 ? (
               <div>No blueprints yet.</div>
@@ -503,6 +599,7 @@ export default function DashboardPage() {
             )}
           </div>
           {onboardingMessage ? <div style={{ marginTop: 8 }}>{onboardingMessage}</div> : null}
+          {knowledgeMessage ? <div style={{ marginTop: 8 }}>{knowledgeMessage}</div> : null}
         </section>
       ) : null}
 
@@ -756,6 +853,59 @@ export default function DashboardPage() {
           </ul>
         )}
       </section>
+
+      {canManageOnboarding ? (
+        <section style={{ marginTop: 20 }}>
+          <h2>Knowledge Base (Tenant)</h2>
+          {knowledgeStats ? (
+            <div style={{ border: "1px solid #ddd", padding: 10 }}>
+              <div><strong>Total items:</strong> {knowledgeStats.total_items}</div>
+              <div style={{ marginTop: 8 }}><strong>By tab:</strong></div>
+              <ul>
+                {Object.entries(knowledgeStats.by_tab).map(([tabName, count]) => (
+                  <li key={tabName}>
+                    <button onClick={() => setKnowledgeTabFilter(tabName)} style={{ marginRight: 6 }}>
+                      Filter
+                    </button>
+                    {tabName}: {count}
+                  </li>
+                ))}
+              </ul>
+              <div style={{ marginTop: 8 }}><strong>Team hints:</strong> {Object.entries(knowledgeStats.by_team_hint).map(([k, v]) => `${k}:${v}`).join(", ")}</div>
+            </div>
+          ) : (
+            <div>Sync data to view knowledge statistics.</div>
+          )}
+          {knowledgeItems.length > 0 ? (
+            <ul style={{ marginTop: 8 }}>
+              {knowledgeItems.slice(0, 8).map((item) => (
+                <li key={item.id}>
+                  <strong>{item.source_tab}</strong> - {item.title} ({item.team_hint})
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {tenantProfile ? (
+            <div style={{ marginTop: 10 }}>
+              <div><strong>Tenant domain:</strong> {tenantProfile.business_domain}</div>
+              {me?.role === "admin" ? (
+                <button onClick={() => void handleSaveTenantProfile()} style={{ marginTop: 6 }}>
+                  Save Tenant Configuration
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {tenantAnalytics ? (
+            <div style={{ marginTop: 10, border: "1px solid #ddd", padding: 10 }}>
+              <div><strong>Adaptive analytics</strong></div>
+              <div>Users: {tenantAnalytics.users_count}</div>
+              <div>Avg assessment: {tenantAnalytics.avg_assessment_score}</div>
+              <div>Avg simulation: {tenantAnalytics.avg_simulation_score}</div>
+              <div>Weak skills: {tenantAnalytics.weak_skills.map((w) => `${w.skill_name}:${w.score}`).join(", ") || "N/A"}</div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {canManageOnboarding ? (
         <section style={{ marginTop: 20 }}>

@@ -224,3 +224,40 @@ class SimulationAttempt(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
+
+class TenantProfile(Base):
+    __tablename__ = "tenant_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid_pk)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, unique=True, index=True)
+    business_domain: Mapped[str] = mapped_column(String(255), nullable=False, default="general")
+    role_template_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    taxonomy_mapping_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    generation_prefs_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    connectors_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    labels_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class KnowledgeItem(Base):
+    __tablename__ = "knowledge_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid_pk)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    source_kind: Mapped[str] = mapped_column(String(50), nullable=False, default="google_sheet", index=True)
+    source_tab: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    source_gid: Mapped[str] = mapped_column(String(50), nullable=False, default="", index=True)
+    source_row: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    canonical_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    category: Mapped[str] = mapped_column(String(255), nullable=False, default="", index=True)
+    service_type: Mapped[str] = mapped_column(String(255), nullable=False, default="", index=True)
+    team_hint: Mapped[str] = mapped_column(String(100), nullable=False, default="", index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    tags_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    attrs_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+

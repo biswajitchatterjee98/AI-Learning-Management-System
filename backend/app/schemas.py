@@ -242,3 +242,59 @@ class SimulationAttemptOut(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime] = None
 
+
+class SheetTabSource(BaseModel):
+    name: str
+    url: str
+    gid: str
+
+
+class TenantDataSyncRequest(BaseModel):
+    tabs: List[SheetTabSource] = Field(default_factory=list)
+
+
+class TenantDataSyncOut(BaseModel):
+    ok: bool
+    synced_tabs: int
+    upserted_items: int
+
+
+class KnowledgeItemOut(BaseModel):
+    id: UUID
+    source_tab: str
+    source_row: int
+    title: str
+    category: str
+    service_type: str
+    team_hint: str
+    description: str
+    tags_json: Dict[str, Any] = Field(default_factory=dict)
+    attrs_json: Dict[str, Any] = Field(default_factory=dict)
+    source_url: str
+    updated_at: datetime
+
+
+class KnowledgeStatsOut(BaseModel):
+    total_items: int
+    by_tab: Dict[str, int] = Field(default_factory=dict)
+    by_team_hint: Dict[str, int] = Field(default_factory=dict)
+
+
+class TenantProfileUpsertRequest(BaseModel):
+    business_domain: str = "general"
+    role_template_json: Dict[str, Any] = Field(default_factory=dict)
+    taxonomy_mapping_json: Dict[str, Any] = Field(default_factory=dict)
+    generation_prefs_json: Dict[str, Any] = Field(default_factory=dict)
+    connectors_json: Dict[str, Any] = Field(default_factory=dict)
+    labels_json: Dict[str, Any] = Field(default_factory=dict)
+
+
+class TenantProfileOut(BaseModel):
+    business_domain: str
+    role_template_json: Dict[str, Any] = Field(default_factory=dict)
+    taxonomy_mapping_json: Dict[str, Any] = Field(default_factory=dict)
+    generation_prefs_json: Dict[str, Any] = Field(default_factory=dict)
+    connectors_json: Dict[str, Any] = Field(default_factory=dict)
+    labels_json: Dict[str, Any] = Field(default_factory=dict)
+    updated_at: datetime
+

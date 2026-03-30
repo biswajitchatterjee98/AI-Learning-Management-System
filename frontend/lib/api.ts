@@ -151,6 +151,47 @@ export type SimulationAttemptOut = {
   created_at: string;
   completed_at?: string | null;
 };
+export type TenantProfileOut = {
+  business_domain: string;
+  role_template_json: Record<string, unknown>;
+  taxonomy_mapping_json: Record<string, unknown>;
+  generation_prefs_json: Record<string, unknown>;
+  connectors_json: Record<string, unknown>;
+  labels_json: Record<string, unknown>;
+  updated_at: string;
+};
+export type SheetTabSource = { name: string; url: string; gid: string };
+export type TenantDataSyncOut = { ok: boolean; synced_tabs: number; upserted_items: number };
+export type KnowledgeItemOut = {
+  id: string;
+  source_tab: string;
+  source_row: number;
+  title: string;
+  category: string;
+  service_type: string;
+  team_hint: string;
+  description: string;
+  tags_json: Record<string, unknown>;
+  attrs_json: Record<string, unknown>;
+  source_url: string;
+  updated_at: string;
+};
+export type KnowledgeStatsOut = {
+  total_items: number;
+  by_tab: Record<string, number>;
+  by_team_hint: Record<string, number>;
+};
+export type TenantAnalyticsOut = {
+  users_count: number;
+  knowledge_items: number;
+  knowledge_by_tab: Record<string, number>;
+  lesson_completions: number;
+  assessments_submitted: number;
+  avg_assessment_score: number;
+  simulations_completed: number;
+  avg_simulation_score: number;
+  weak_skills: Array<{ skill_name: string; score: number; user_id: string }>;
+};
 
 export async function coursesApi(accessToken: string): Promise<CourseOut[]> {
   return request<CourseOut[]>("/api/courses", {
@@ -324,6 +365,66 @@ export async function submitSimulationApi(
 
 export async function simulationAttemptApi(accessToken: string, attemptId: string): Promise<SimulationAttemptOut> {
   return request<SimulationAttemptOut>(`/api/simulations/attempts/${attemptId}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+}
+
+export async function tenantProfileApi(accessToken: string): Promise<TenantProfileOut> {
+  return request<TenantProfileOut>("/api/tenant/profile", {
+    method: "GET",
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+}
+
+export async function upsertTenantProfileApi(
+  accessToken: string,
+  payload: Omit<TenantProfileOut, "updated_at">
+): Promise<TenantProfileOut> {
+  return request<TenantProfileOut>("/api/tenant/profile", {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function syncTenantDataApi(
+  accessToken: string,
+  payload: { tabs?: SheetTabSource[] }
+): Promise<TenantDataSyncOut> {
+  return request<TenantDataSyncOut>("/api/tenant-data/sync", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function knowledgeStatsApi(accessToken: string): Promise<KnowledgeStatsOut> {
+  return request<KnowledgeStatsOut>("/api/knowledge/stats", {
+    method: "GET",
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+}
+
+export async function knowledgeItemsApi(accessToken: string, tab = "", limit = 20): Promise<KnowledgeItemOut[]> {
+  const q = new URLSearchParams();
+  if (tab) q.set("tab", tab);
+  q.set("limit", String(limit));
+  return request<KnowledgeItemOut[]>(`/api/knowledge-items?${q.toString()}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+}
+
+export async function createBlueprintFromKnowledgeApi(accessToken: string): Promise<BlueprintOut> {
+  return request<BlueprintOut>("/api/onboarding/blueprint/from-knowledge", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+}
+
+export async function tenantAnalyticsApi(accessToken: string): Promise<TenantAnalyticsOut> {
+  return request<TenantAnalyticsOut>("/api/analytics/tenant", {
     method: "GET",
     headers: { Authorization: `Bearer ${accessToken}` }
   });
