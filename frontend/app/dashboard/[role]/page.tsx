@@ -60,6 +60,122 @@ function roleLabel(role: string) {
   return role;
 }
 
+const ui = {
+  page: {
+    padding: 24,
+    maxWidth: 1100,
+    margin: "0 auto",
+    fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+    color: "#0f172a",
+    background: "#f8fafc",
+    minHeight: "100vh",
+  } as const,
+  hero: {
+    background: "linear-gradient(135deg, #111827 0%, #1f2937 55%, #0f172a 100%)",
+    color: "#f8fafc",
+    padding: 20,
+    borderRadius: 14,
+    marginBottom: 16,
+  } as const,
+  card: {
+    marginTop: 16,
+    background: "#ffffff",
+    border: "1px solid #e2e8f0",
+    borderRadius: 12,
+    padding: 16,
+    boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+  } as const,
+  metricsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gap: 10,
+    marginTop: 12,
+  } as const,
+  metricCard: {
+    border: "1px solid #e2e8f0",
+    borderRadius: 10,
+    padding: 10,
+    background: "#f8fafc",
+  } as const,
+  input: {
+    padding: 10,
+    border: "1px solid #cbd5e1",
+    borderRadius: 8,
+    width: "100%",
+  } as const,
+  select: {
+    padding: 10,
+    border: "1px solid #cbd5e1",
+    borderRadius: 8,
+    width: "100%",
+    maxWidth: 420,
+  } as const,
+  textarea: {
+    padding: 10,
+    border: "1px solid #cbd5e1",
+    borderRadius: 8,
+    width: "100%",
+  } as const,
+  primaryBtn: {
+    padding: "10px 14px",
+    borderRadius: 8,
+    border: "1px solid #111827",
+    background: "#111827",
+    color: "#fff",
+    cursor: "pointer",
+    width: "fit-content",
+  } as const,
+  secondaryBtn: {
+    padding: "8px 12px",
+    borderRadius: 8,
+    border: "1px solid #cbd5e1",
+    background: "#fff",
+    color: "#0f172a",
+    cursor: "pointer",
+    width: "fit-content",
+  } as const,
+  muted: { color: "#475569", fontSize: 13 } as const,
+  layoutGrid: {
+    marginTop: 16,
+    display: "grid",
+    gridTemplateColumns: "220px 1fr",
+    gap: 14,
+    alignItems: "start",
+  } as const,
+  sideNav: {
+    background: "#ffffff",
+    border: "1px solid #e2e8f0",
+    borderRadius: 12,
+    padding: 10,
+    position: "sticky",
+    top: 12,
+  } as const,
+  tabBtn: {
+    width: "100%",
+    textAlign: "left",
+    padding: "10px 12px",
+    marginBottom: 6,
+    borderRadius: 8,
+    border: "1px solid #e2e8f0",
+    background: "#fff",
+    cursor: "pointer",
+    color: "#0f172a",
+  } as const,
+  tabBtnActive: {
+    width: "100%",
+    textAlign: "left",
+    padding: "10px 12px",
+    marginBottom: 6,
+    borderRadius: 8,
+    border: "1px solid #111827",
+    background: "#111827",
+    cursor: "pointer",
+    color: "#fff",
+  } as const,
+};
+
+type DashboardTab = "overview" | "onboarding" | "learning" | "ai" | "knowledge" | "performance" | "integrations";
+
 export default function DashboardPage() {
   const router = useRouter();
   const params = useParams<{ role: string }>();
@@ -114,6 +230,7 @@ export default function DashboardPage() {
   const [integrationMessage, setIntegrationMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
 
   const expectedRole = useMemo(() => role ?? "", [role]);
   const canManageOnboarding = me?.role === "admin" || me?.role === "manager";
@@ -529,55 +646,107 @@ export default function DashboardPage() {
   }
 
   return (
-    <main style={{ padding: 24, maxWidth: 920, margin: "0 auto" }}>
-      <h1>
-        {roleLabel(expectedRole)} Dashboard
-      </h1>
+    <main style={ui.page}>
+      <section style={ui.hero}>
+        <h1 style={{ margin: 0 }}>{roleLabel(expectedRole)} Dashboard</h1>
+        <div style={{ marginTop: 6, opacity: 0.9 }}>Adaptive AI-LMS | Tenant-ready learning and performance cockpit</div>
+      </section>
 
       {loading ? <div>Loading...</div> : null}
       {error ? <div style={{ color: "crimson" }}>{error}</div> : null}
 
       {me ? (
-        <div style={{ marginTop: 12, opacity: 0.9 }}>
+        <div style={{ marginTop: 8, opacity: 0.95 }}>
           Logged in as: <strong>{me.full_name}</strong> ({me.role})
           {canManageOnboarding ? (
             <span style={{ marginLeft: 10 }}>
-              <button onClick={() => void handleCopyMyUserId()} style={{ marginRight: 6 }}>
+              <button onClick={() => void handleCopyMyUserId()} style={{ ...ui.secondaryBtn, marginRight: 6 }}>
                 Copy My User ID
               </button>
-              <button onClick={() => void handleUseMyUserIdForKpi()}>Use My ID for KPI</button>
+              <button onClick={() => void handleUseMyUserIdForKpi()} style={ui.secondaryBtn}>Use My ID for KPI</button>
             </span>
           ) : null}
         </div>
       ) : null}
 
-      {canManageOnboarding ? (
-        <section style={{ marginTop: 20, borderTop: "1px solid #ddd", paddingTop: 16 }}>
+      <section style={ui.metricsGrid}>
+        <div style={ui.metricCard}>
+          <div style={ui.muted}>Courses</div>
+          <div style={{ fontWeight: 700, fontSize: 22 }}>{courses.length}</div>
+        </div>
+        <div style={ui.metricCard}>
+          <div style={ui.muted}>Modules</div>
+          <div style={{ fontWeight: 700, fontSize: 22 }}>{modules.length}</div>
+        </div>
+        <div style={ui.metricCard}>
+          <div style={ui.muted}>Lessons</div>
+          <div style={{ fontWeight: 700, fontSize: 22 }}>{lessons.length}</div>
+        </div>
+        <div style={ui.metricCard}>
+          <div style={ui.muted}>Recommendations</div>
+          <div style={{ fontWeight: 700, fontSize: 22 }}>{recommendations.length}</div>
+        </div>
+        <div style={ui.metricCard}>
+          <div style={ui.muted}>Knowledge Items</div>
+          <div style={{ fontWeight: 700, fontSize: 22 }}>{knowledgeStats?.total_items ?? 0}</div>
+        </div>
+      </section>
+
+      <section style={ui.layoutGrid}>
+        <aside style={ui.sideNav}>
+          <div style={{ ...ui.muted, marginBottom: 8, fontWeight: 700 }}>Workspace</div>
+          {(["overview", "learning", "ai"] as DashboardTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={activeTab === tab ? ui.tabBtnActive : ui.tabBtn}
+            >
+              {tab === "ai" ? "AI Coach" : tab[0].toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+          {canManageOnboarding ? (
+            <>
+              {(["onboarding", "knowledge", "performance", "integrations"] as DashboardTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  style={activeTab === tab ? ui.tabBtnActive : ui.tabBtn}
+                >
+                  {tab[0].toUpperCase() + tab.slice(1)}
+                </button>
+              ))}
+            </>
+          ) : null}
+        </aside>
+
+        <div>
+      {canManageOnboarding && activeTab === "onboarding" ? (
+        <section style={ui.card}>
           <h2>Onboarding</h2>
           <form onSubmit={handleCreateBlueprint} style={{ display: "grid", gap: 8, maxWidth: 700 }}>
             <input
               placeholder="Website URL (optional)"
               value={websiteUrl}
               onChange={(e) => setWebsiteUrl(e.target.value)}
-              style={{ padding: 8 }}
+              style={ui.input}
             />
             <textarea
               placeholder="Paste SOP/document text for blueprint generation"
               value={documentsText}
               onChange={(e) => setDocumentsText(e.target.value)}
               rows={5}
-              style={{ padding: 8 }}
+              style={ui.textarea}
               required
             />
-            <button type="submit" style={{ padding: 10, width: 220 }}>
+            <button type="submit" style={ui.primaryBtn}>
               Create Blueprint
             </button>
           </form>
           <div style={{ marginTop: 10 }}>
-            <button onClick={() => void handleSyncTenantData()} style={{ marginRight: 8 }}>
+            <button onClick={() => void handleSyncTenantData()} style={{ ...ui.secondaryBtn, marginRight: 8 }}>
               Sync Namadarshan Sheet Data
             </button>
-            <button onClick={() => void handleCreateBlueprintFromKnowledge()}>
+            <button onClick={() => void handleCreateBlueprintFromKnowledge()} style={ui.secondaryBtn}>
               Create Blueprint From Synced Data
             </button>
           </div>
@@ -590,7 +759,7 @@ export default function DashboardPage() {
                 {blueprints.map((b) => (
                   <li key={b.id}>
                     <span>{new Date(b.created_at).toLocaleString()} - version {b.version}</span>{" "}
-                    <button onClick={() => handleGenerateLms(b.id)} style={{ marginLeft: 8 }}>
+                    <button onClick={() => handleGenerateLms(b.id)} style={{ ...ui.secondaryBtn, marginLeft: 8 }}>
                       Generate LMS
                     </button>
                   </li>
@@ -603,10 +772,11 @@ export default function DashboardPage() {
         </section>
       ) : null}
 
-      <section style={{ marginTop: 20 }}>
+      {(activeTab === "overview" || activeTab === "learning") ? (
+      <section style={ui.card}>
         <h2>Courses</h2>
         {courses.length > 0 ? (
-          <select value={selectedCourseId} onChange={(e) => void handleCourseChange(e.target.value)} style={{ padding: 8 }}>
+          <select value={selectedCourseId} onChange={(e) => void handleCourseChange(e.target.value)} style={ui.select}>
             {courses.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.title}
@@ -627,11 +797,13 @@ export default function DashboardPage() {
           </ul>
         )}
       </section>
+      ) : null}
 
-      <section style={{ marginTop: 20 }}>
+      {(activeTab === "overview" || activeTab === "learning") ? (
+      <section style={ui.card}>
         <h2>Learning Flow</h2>
         {modules.length > 0 ? (
-          <select value={selectedModuleId} onChange={(e) => void handleModuleChange(e.target.value)} style={{ padding: 8 }}>
+          <select value={selectedModuleId} onChange={(e) => void handleModuleChange(e.target.value)} style={ui.select}>
             {modules.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.title}
@@ -647,7 +819,7 @@ export default function DashboardPage() {
               <li key={lesson.id} style={{ marginBottom: 10 }}>
                 <strong>{lesson.title}</strong>
                 <div style={{ fontSize: 13, opacity: 0.85, whiteSpace: "pre-wrap" }}>{lesson.content_text}</div>
-                <button onClick={() => void handleCompleteLesson(lesson.id)} style={{ marginTop: 6 }}>
+                <button onClick={() => void handleCompleteLesson(lesson.id)} style={{ ...ui.secondaryBtn, marginTop: 6 }}>
                   Mark Complete
                 </button>
               </li>
@@ -656,15 +828,17 @@ export default function DashboardPage() {
         ) : null}
         {learningMessage ? <div>{learningMessage}</div> : null}
       </section>
+      ) : null}
 
-      <section style={{ marginTop: 20 }}>
+      {(activeTab === "overview" || activeTab === "ai") ? (
+      <section style={ui.card}>
         <h2>AI Tutor Feedback</h2>
         {lessons.length > 0 ? (
           <form onSubmit={handleTutorFeedback} style={{ display: "grid", gap: 8, maxWidth: 760 }}>
             <select
               value={selectedLessonIdForTutor}
               onChange={(e) => setSelectedLessonIdForTutor(e.target.value)}
-              style={{ padding: 8 }}
+              style={ui.select}
             >
               {lessons.map((lesson) => (
                 <option key={lesson.id} value={lesson.id}>
@@ -677,10 +851,10 @@ export default function DashboardPage() {
               value={learnerAnswer}
               onChange={(e) => setLearnerAnswer(e.target.value)}
               rows={5}
-              style={{ padding: 8 }}
+              style={ui.textarea}
               required
             />
-            <button type="submit" style={{ padding: 10, width: 220 }}>
+            <button type="submit" style={ui.primaryBtn}>
               Get Tutor Feedback
             </button>
           </form>
@@ -696,18 +870,20 @@ export default function DashboardPage() {
           </div>
         ) : null}
       </section>
+      ) : null}
 
-      <section style={{ marginTop: 20 }}>
+      {(activeTab === "overview" || activeTab === "ai") ? (
+      <section style={ui.card}>
         <h2>Simulation (Phase 2)</h2>
         <form onSubmit={handleStartSimulation} style={{ display: "grid", gap: 8, maxWidth: 760 }}>
-          <input value={simulationTeam} onChange={(e) => setSimulationTeam(e.target.value)} placeholder="Team (e.g. Sales)" style={{ padding: 8 }} />
+          <input value={simulationTeam} onChange={(e) => setSimulationTeam(e.target.value)} placeholder="Team (e.g. Sales)" style={ui.input} />
           <input
             value={simulationFocus}
             onChange={(e) => setSimulationFocus(e.target.value)}
             placeholder="Focus topic (e.g. objection_handling)"
-            style={{ padding: 8 }}
+            style={ui.input}
           />
-          <button type="submit" style={{ padding: 10, width: 220 }}>
+          <button type="submit" style={ui.primaryBtn}>
             Start Simulation
           </button>
         </form>
@@ -721,10 +897,10 @@ export default function DashboardPage() {
                 onChange={(e) => setSimulationResponse(e.target.value)}
                 placeholder="Write your simulation response"
                 rows={5}
-                style={{ padding: 8 }}
+                style={ui.textarea}
                 required
               />
-              <button type="submit" style={{ padding: 10, width: 260 }}>
+              <button type="submit" style={ui.primaryBtn}>
                 Submit For AI Evaluation
               </button>
             </form>
@@ -738,8 +914,10 @@ export default function DashboardPage() {
           </div>
         ) : null}
       </section>
+      ) : null}
 
-      <section style={{ marginTop: 20 }}>
+      {activeTab === "overview" ? (
+      <section style={ui.card}>
         <h2>Async Jobs</h2>
         {isPollingJob ? <div>Polling job status...</div> : null}
         {activeJobStatus ? (
@@ -752,8 +930,10 @@ export default function DashboardPage() {
           <div>No active background jobs yet.</div>
         )}
       </section>
+      ) : null}
 
-      <section style={{ marginTop: 20 }}>
+      {(activeTab === "overview" || activeTab === "performance") ? (
+      <section style={ui.card}>
         <h2>Gamification</h2>
         {gamificationProfile ? (
           <div style={{ border: "1px solid #ddd", padding: 10 }}>
@@ -777,8 +957,10 @@ export default function DashboardPage() {
           <div>Loading gamification profile...</div>
         )}
       </section>
+      ) : null}
 
-      <section style={{ marginTop: 20 }}>
+      {(activeTab === "overview" || activeTab === "performance") ? (
+      <section style={ui.card}>
         <h2>Leaderboard (Tenant)</h2>
         {leaderboard.length === 0 ? (
           <div>No leaderboard entries yet.</div>
@@ -792,14 +974,16 @@ export default function DashboardPage() {
           </ul>
         )}
       </section>
+      ) : null}
 
-      <section style={{ marginTop: 20 }}>
+      {(activeTab === "overview" || activeTab === "learning") ? (
+      <section style={ui.card}>
         <h2>Assessment</h2>
         {assessments.length > 0 ? (
           <select
             value={selectedAssessmentId}
             onChange={(e) => void handleAssessmentChange(e.target.value)}
-            style={{ padding: 8 }}
+            style={ui.select}
           >
             {assessments.map((a) => (
               <option key={a.id} value={a.id}>
@@ -830,15 +1014,17 @@ export default function DashboardPage() {
                 ))}
               </div>
             ))}
-            <button type="submit" style={{ padding: 10, width: 220 }}>
+            <button type="submit" style={ui.primaryBtn}>
               Submit Assessment
             </button>
           </form>
         ) : null}
         {assessmentMessage ? <div style={{ marginTop: 8 }}>{assessmentMessage}</div> : null}
       </section>
+      ) : null}
 
-      <section style={{ marginTop: 20 }}>
+      {(activeTab === "overview" || activeTab === "learning") ? (
+      <section style={ui.card}>
         <h2>Recommended Next Lessons</h2>
         {recommendations.length === 0 ? (
           <div>You are all caught up. No pending lessons right now.</div>
@@ -853,9 +1039,10 @@ export default function DashboardPage() {
           </ul>
         )}
       </section>
+      ) : null}
 
-      {canManageOnboarding ? (
-        <section style={{ marginTop: 20 }}>
+      {canManageOnboarding && (activeTab === "knowledge" || activeTab === "overview") ? (
+        <section style={ui.card}>
           <h2>Knowledge Base (Tenant)</h2>
           {knowledgeStats ? (
             <div style={{ border: "1px solid #ddd", padding: 10 }}>
@@ -864,7 +1051,7 @@ export default function DashboardPage() {
               <ul>
                 {Object.entries(knowledgeStats.by_tab).map(([tabName, count]) => (
                   <li key={tabName}>
-                    <button onClick={() => setKnowledgeTabFilter(tabName)} style={{ marginRight: 6 }}>
+                    <button onClick={() => setKnowledgeTabFilter(tabName)} style={{ ...ui.secondaryBtn, marginRight: 6 }}>
                       Filter
                     </button>
                     {tabName}: {count}
@@ -889,7 +1076,7 @@ export default function DashboardPage() {
             <div style={{ marginTop: 10 }}>
               <div><strong>Tenant domain:</strong> {tenantProfile.business_domain}</div>
               {me?.role === "admin" ? (
-                <button onClick={() => void handleSaveTenantProfile()} style={{ marginTop: 6 }}>
+                <button onClick={() => void handleSaveTenantProfile()} style={{ ...ui.secondaryBtn, marginTop: 6 }}>
                   Save Tenant Configuration
                 </button>
               ) : null}
@@ -907,25 +1094,25 @@ export default function DashboardPage() {
         </section>
       ) : null}
 
-      {canManageOnboarding ? (
-        <section style={{ marginTop: 20 }}>
+      {canManageOnboarding && (activeTab === "performance" || activeTab === "overview") ? (
+        <section style={ui.card}>
           <h2>KPI Ingestion (Manager/Admin)</h2>
           <form onSubmit={handleIngestKpi} style={{ display: "grid", gap: 8, maxWidth: 760 }}>
             <input
               placeholder="Target user UUID"
               value={kpiUserId}
               onChange={(e) => setKpiUserId(e.target.value)}
-              style={{ padding: 8 }}
+              style={ui.input}
               required
             />
             <textarea
               value={kpiMetricsText}
               onChange={(e) => setKpiMetricsText(e.target.value)}
               rows={4}
-              style={{ padding: 8, fontFamily: "monospace" }}
+              style={{ ...ui.textarea, fontFamily: "monospace" }}
               required
             />
-            <button type="submit" style={{ padding: 10, width: 220 }}>
+            <button type="submit" style={ui.primaryBtn}>
               Ingest KPI Metrics
             </button>
           </form>
@@ -942,22 +1129,22 @@ export default function DashboardPage() {
         </section>
       ) : null}
 
-      {canManageOnboarding ? (
-        <section style={{ marginTop: 20 }}>
+      {canManageOnboarding && activeTab === "integrations" ? (
+        <section style={ui.card}>
           <h2>Integrations (Webhook Registry)</h2>
           <form onSubmit={handleCreateWebhook} style={{ display: "grid", gap: 8, maxWidth: 760 }}>
             <input
               placeholder="Provider (e.g. slack, teams, zapier)"
               value={webhookProvider}
               onChange={(e) => setWebhookProvider(e.target.value)}
-              style={{ padding: 8 }}
+              style={ui.input}
               required
             />
             <input
               placeholder="Event name (e.g. progress.updated)"
               value={webhookEventName}
               onChange={(e) => setWebhookEventName(e.target.value)}
-              style={{ padding: 8 }}
+              style={ui.input}
               required
             />
             <input
@@ -965,10 +1152,10 @@ export default function DashboardPage() {
               type="url"
               value={webhookTargetUrl}
               onChange={(e) => setWebhookTargetUrl(e.target.value)}
-              style={{ padding: 8 }}
+              style={ui.input}
               required
             />
-            <button type="submit" style={{ padding: 10, width: 220 }}>
+            <button type="submit" style={ui.primaryBtn}>
               Register Webhook
             </button>
           </form>
@@ -986,6 +1173,8 @@ export default function DashboardPage() {
           )}
         </section>
       ) : null}
+        </div>
+      </section>
     </main>
   );
 }
