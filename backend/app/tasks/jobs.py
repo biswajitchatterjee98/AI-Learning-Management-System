@@ -69,7 +69,8 @@ def generate_lms_job(job_id: str, tenant_id: str, blueprint_id: str) -> dict:
             db.flush()
 
             created_lessons = 0
-            tabs = list(grouped_by_tab.keys())[:6] if grouped_by_tab else teams[:3]
+            # Generate one playbook module per available source tab.
+            tabs = list(grouped_by_tab.keys()) if grouped_by_tab else teams[:3]
             for idx, tab in enumerate(tabs):
                 module = Module(tenant_id=UUID(tenant_id), course_id=course.id, title=f"{tab} Playbook", order_index=idx)
                 db.add(module)

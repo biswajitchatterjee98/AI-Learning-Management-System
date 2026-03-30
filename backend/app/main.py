@@ -491,14 +491,14 @@ def _build_blueprint_from_knowledge(tenant_id: UUID, db: Session) -> Dict[str, A
         }
     team_counts = Counter([r.team_hint for r in rows if r.team_hint])
     domain_counts = Counter([r.source_tab for r in rows])
-    top_domains = [d for d, _ in domain_counts.most_common(6)]
+    top_domains = [d for d, _ in domain_counts.most_common(20)]
     top_teams = [t for t, _ in team_counts.most_common(3)] or ["operations", "customer_support", "sales"]
     team_map = {"operations": "Operations", "customer_support": "Support", "sales": "Sales"}
     teams = [team_map.get(t, t.title()) for t in top_teams]
     return {
         "teams": teams,
         "kpis": ["conversion_rate", "resolution_time", "customer_satisfaction"],
-        "training_focus": [f"{d.lower().replace(' ', '_')}_handling" for d in top_domains[:5]],
+        "training_focus": [f"{d.lower().replace(' ', '_')}_handling" for d in top_domains[:10]],
         "simulation_required": True,
         "source": {"generator": "knowledge_items", "items_count": len(rows), "tabs": top_domains},
         "generated_at": datetime.utcnow().isoformat() + "Z",
